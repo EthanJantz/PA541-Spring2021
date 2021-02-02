@@ -1,0 +1,134 @@
+---
+title: 'PA 542: Homework 1'
+author: "Ethan Jantz"
+date: "2/1/2021"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, message=FALSE}
+### ------
+### Setup
+###
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+library(tidyverse)
+
+data <- read_csv(here::here("Data", "Fatalities.csv"))
+```
+
+# PART ONE
+
+## QUESTION 1
+
+> a. First, let’s select a handful of variables to focus on and remove the others. Create a new dataset, call it fatality2, that contains only the following variables: fatal, state, year, spirits, unemp, income, dry, pop, and miles. Use this dataset for all steps below. (2pts)
+
+```{r q1a}
+fatality2 <- data %>%
+  select(fatal, state, year, spirits,
+         unemp, income, dry, pop, miles)
+```
+
+> b. For each year available in the dataset (i.e., 1982 – 1988), how many total fatalities were there in each of those years? (2pts)
+
+```{r q1b}
+fatality2 %>%
+  group_by(year) %>%
+  summarize(fatalities = sum(fatal))
+```
+
+> c. Which state had the largest number of fatalities in 1982? (2pts)
+
+```{r q1c}
+fatality2 %>%
+  filter(year == 1982) %>%
+  group_by(state) %>%
+  summarize(fatalities = sum(fatal)) %>%
+  arrange(desc(fatalities))
+```
+
+**ANSWER** California had the most fatalities in 1982, with Texas close behind.
+
+> d. Which states in which years had more than 1,000 fatalities and more than 20% of its population residing in dry counties. (2pts)
+
+```{r q1d}
+fatality2 %>%
+  group_by(year, state) %>%
+  summarize(
+    fatalities = sum(fatal),
+    dry = dry
+    ) %>%
+  filter(fatalities > 1000, dry > 20)
+```
+
+**ANSWER** North Carolina for each year in the study period and Alabama for three of those years met the criteria.
+
+> e. What is the average number of fatalities in each state? (2pts)
+
+```{r q1e}
+fatality2 %>%
+  group_by(state) %>%
+  summarize(fatalities_avg = mean(fatal))
+```
+
+## QUESTION 2
+
+> Create a new variable, ‘fatal.cat’ that breaks the continuous variable fatal down into three categories: (i) 0 - 300, (ii) >300 - 1000, (iii) >1000. Please label the categories “low”, “mid”, “high”. Set this new variable to be a factor.
+
+```{r q2a}
+fatality2 <- fatality2 %>%
+  mutate(fatal.cat = case_when(
+    fatal <= 300 ~ "low",
+    fatal %in% 301:1000 ~ "mid",
+    fatal > 1000 ~ "high"
+  ) %>% factor()
+  )
+
+summary(fatality2$fatal.cat)
+```
+
+> What is the mean of miles in each of the fatal categories?
+
+```{r q2b}
+fatality2 %>%
+  group_by(fatal.cat) %>%
+  summarize(miles_avg = mean(miles))
+```
+
+# PART TWO
+
+> Regression. For part 2, let’s limit the fatality2 data from above to only the year 1987. So, to begin part 2, create this new dataset and call it fatality3.
+
+```{r p2}
+fatality3 <- fatality2 %>%
+  filter(year == 1987)
+```
+
+## QUESTION 3
+
+> Using the newly created fatality3 dataset, test the correlation between miles and fatal. What are your findings (i.e., what is the size of the correlation and is it significant)?
+
+```{r q3}
+fatality3 %>%
+  lm(data = ., fatal ~ miles) %>%
+  summary()
+```
+
+**ANSWER** There is a statistically insignificant (p > .1) negative correlation (beta = -0.1879) between miles and fatal. 
+
+## QUESTION 4
+
+> Create a new population variable, that is population in 100,000s. Call the new variable pop_100k. Run a simple linear regression predicting fatal from pop.100k. (a) Interpret the estimates of the slope and intercept coefficients in the context of the problem. (b) What is the percentage of variation in fatal explained by pop_100k? (c) Predict the number of fatalities in a state if the population was 8 million.
+
+```{r q4}
+fatality3 %>%
+  mutate(pop_100k = pop / 100000) %>%
+  lm(data = ., fatal ~ pop_100k) %>%
+  summary()
+```
+
+**ANSWER** According to our model, there is a significant (p < .001) relationship between a state's population size and number of annual vehicular fatalities. Using data collected from the US Department of Transportation we found that for every 100,000 person increase in population there is an estimated 17.8 more annual vehicle fatalities. Hypothetically, if a state's population were to drop precipitously to 0 for one year, our model predicts that there would still be 66.8 vehicle fatalities in that year. Likely the result of interstate travel. This model describes a strong assocation between these two variables, explaining 92% of the variance in annual vehicular fatalities between states in any given year. Using this model we can attempt to predict the number of vehicular fatalities a state with 8 million residents, slightly more than the current population of Arizona, would experience in a given year. `r 17.8 * (8000000/100000) + 66.8`, or approximately `r round((((8000000/100000) + 66.8)) / 8000000, digits = 5)`% of the population. If we compare this estimate with the 2019 count of vehicle fatalities in Ariona, `911`, we find a larger-than-expected error (or difference) of `r abs(911 - (17.8 * (8000000/100000) + 66.8))`, many more fatalities than our model predicted. This model is likely underspecified and not fit to explain contemporary trends in vehicular fatalities.
+
+
+
