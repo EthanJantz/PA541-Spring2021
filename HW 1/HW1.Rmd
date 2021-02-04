@@ -122,13 +122,100 @@ fatality3 %>%
 > Create a new population variable, that is population in 100,000s. Call the new variable pop_100k. Run a simple linear regression predicting fatal from pop.100k. (a) Interpret the estimates of the slope and intercept coefficients in the context of the problem. (b) What is the percentage of variation in fatal explained by pop_100k? (c) Predict the number of fatalities in a state if the population was 8 million.
 
 ```{r q4}
+fatality3 <- fatality3 %>%
+  mutate(pop_100k = pop / 100000)
+
 fatality3 %>%
-  mutate(pop_100k = pop / 100000) %>%
   lm(data = ., fatal ~ pop_100k) %>%
   summary()
 ```
 
-**ANSWER** According to our model, there is a significant (p < .001) relationship between a state's population size and number of annual vehicular fatalities. Using data collected from the US Department of Transportation we found that for every 100,000 person increase in population there is an estimated 17.8 more annual vehicle fatalities. Hypothetically, if a state's population were to drop precipitously to 0 for one year, our model predicts that there would still be 66.8 vehicle fatalities in that year. Likely the result of interstate travel. This model describes a strong assocation between these two variables, explaining 92% of the variance in annual vehicular fatalities between states in any given year. Using this model we can attempt to predict the number of vehicular fatalities a state with 8 million residents, slightly more than the current population of Arizona, would experience in a given year. `r 17.8 * (8000000/100000) + 66.8`, or approximately `r round((((8000000/100000) + 66.8)) / 8000000, digits = 5)`% of the population. If we compare this estimate with the 2019 count of vehicle fatalities in Ariona, `911`, we find a larger-than-expected error (or difference) of `r abs(911 - (17.8 * (8000000/100000) + 66.8))`, many more fatalities than our model predicted. This model is likely underspecified and not fit to explain contemporary trends in vehicular fatalities.
+**ANSWER** According to our model, there is a significant (p < .001) relationship between a state's population size and number of annual vehicular fatalities. Using data collected from the US Department of Transportation we found that for every 100,000 person increase in population there is an estimated 17.8 more annual vehicle fatalities. Hypothetically, if a state's population were to drop precipitously to 0 for one year, our model predicts that there would still be 66.8 vehicle fatalities in that year. Likely the result of interstate travel. This model describes a strong association between these two variables, explaining 92% of the variance in annual vehicular fatalities between states in the chosen year. Using this model we can attempt to predict the number of vehicular fatalities that a state with 8 million residents, slightly larger than the current population of Arizona, would experience in a given year. `r 17.8 * (8000000/100000) + 66.8`, or approximately `r round((((8000000/100000) + 66.8)) / 8000000, digits = 5)`% of the population. If we compare this estimate with the 2019 count of vehicle fatalities in Ariona, `911`, we find a larger-than-expected error (or difference) of `r abs(911 - (17.8 * (8000000/100000) + 66.8))`, many more fatalities than our model predicted. This model is likely underspecified due to the narrow study period and not fit to explain contemporary trends in vehicular fatalities.
 
 
+## QUESTION 5
 
+> Which state has the largest negative residual in our model from question 4? Which state has the largest positive residual? Tell me what these large positive and large negative residuals mean within the context of our data and model.
+
+```{r q5}
+fatality3_lm <- fatality3 %>%
+  lm(data = ., fatal ~ pop_100k)
+
+fatality3 <- fatality3 %>%
+  mutate(
+    lm_pred = predict(fatality3_lm),
+    lm_resid = resid(fatality3_lm))
+
+print(
+  fatality3 %>%
+    filter(lm_resid == max(lm_resid) | lm_resid == min(lm_resid)) %>%
+    select(state, fatal, pop_100k, lm_pred, lm_resid)
+)
+```
+
+**ANSWER** New York has the largest negative residual in our model, while Florida has the largest positive residual. Within the context of our model these states are outliers, and are probably having a larger influence on our model than other states in the data.
+
+```{r q5_plots, fig.width=10}
+ny_and_fl <- fatality3 %>%
+  filter(state %in% c("ny", "fl"))
+
+model_lm <- fatality3 %>%
+  ggplot(aes(x = pop_100k, y = fatal)) +
+  geom_smooth(method = "lm") + 
+  geom_point() +
+  geom_point(data = ny_and_fl, color = 'red', size = 3) +
+  geom_text(data = ny_and_fl, aes(label = toupper(state)), hjust = -.5, vjust = 0) +
+  labs(title = "Model of 1987 Vehicular Fatalities",
+       x = "Population (in 100,000's)", y = "Annual Fatalities")
+
+model_resids <- fatality3 %>%
+  ggplot(aes(x = lm_pred, y = lm_resid)) +
+  geom_point() + 
+  geom_point(data = ny_and_fl, color = 'red', size = 3) +
+  geom_text(data = ny_and_fl, aes(label = toupper(state)), hjust = -.5, vjust = 0) +
+  labs(title = "Model of 1987 Vehicular Fatalities",
+       subtitle = "Predictions and Residuals",
+       x = "Predictions", y = "Residuals")
+
+cowplot::plot_grid(model_lm, model_resids)
+```
+
+**ANSWER CONTINUED** We can see that NY and FL are outliers in the left plot, with both states a relatively large distance away from the line of best fit. Plotting the predictions against the residuals shows that our model violates the assumption of homoskedasticity. We can see this in the "fanning out" of the points on the right plot. This serves as further evidence that our model is misspecified. 
+
+## QUESTION 6
+
+> Fit another regression model with fatal as the dependent variable and pop_100k, miles, and dry as the predictors. (a) What percentage of the variation in the dependent variable is explained by the predictors? (b) Ignoring whether the predictor is significant or not, interpret the coefficient estimates for each predictor. Be specific when discussing the relationship. (c) How do we interpret the p-value for dry? (d) By how much did our R-squared increase from our initial model that only included pop_100k as a predictor?
+
+```{r q6}
+fatality3_lm <- fatality3 %>%
+  lm(data = ., fatal ~ pop_100k + miles + dry)
+
+summary(fatality3_lm)
+```
+
+**ANSWER** Approximately 95% of the variance in vehicular fatalities are explained by the predictor variables, a 3% increase from our previous model. Our model suggests that for every 100,000 person increase in a state's population there is an associated 18 more vehicular fatalities. For every 100 miles driven on average by drivers in the state there is one more associated increase in vehicular fatalities. Finally, states with higher concentrations of their population in dry counties see an increase in vehicular fatalities as well, with a 1% increase associated with 7 more deaths. All predictors were found to have statistical significance (p < .05), though the relationship between dry-county populations and fatalities was magnitudes smaller than the other predictors.
+
+## QUESTION 7
+
+> Run the following two models and compare the difference in the size and direction of the coefficient on miles. What is happening here? Can we trust the estimate of the effect of miles in the first model?
+
+> a. Y = B(0) + B(1)miles + e
+> b. Y = B(0) + B(1)miles + B(2)pop_100k + e
+
+```{r q7a}
+fatality3_lm <- fatality3 %>%
+  lm(data = ., fatal ~ miles)
+
+summary(fatality3_lm)
+```
+
+This univariate model shows an insignificant relationship between average miles driven in the state and vehicular fatalities. The direction and magnitude are also near opposite of the relationship shown in the previous model. We can compare this model with one that incorporates another variable, population.
+
+```{r q7b}
+fatality3_lm <- fatality3 %>%
+  lm(data = ., fatal ~ miles + pop_100k)
+
+summary(fatality3_lm)
+```
+
+**ANSWER** This bivariate model incorporating population size shows a markedly more significant relationship between average miles driven and vehicular fatalities. Alongside this change is one of direction and magnitude of effect, changing the coefficient for miles to one similar to that explored in the model from question 6. This difference suggests that miles and population are correlated with each other and our dependent variable. It seems reasonable to conclude that a model of vehicular fatalities that does not include both population *and* average miles driven violates the assumption that there is zero conditional mean of our errors. Furthermore, we find by comparing these models that the coefficient for average miles driven has a downward bias. 
