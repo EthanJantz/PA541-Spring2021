@@ -1,0 +1,211 @@
+---
+title: "Homework 2"
+author: "Ethan Jantz"
+date: "2/26/2021"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+
+library(tidyverse)
+
+cars <- read_csv(here::here("car_data.csv"))
+insurance <- read_csv(here::here("insurance.csv"))
+```
+
+# PART ONE
+
+Part one explores data on car and motorcycle sales. Below is a summary of the variables, first with `summary` and then with `skim` after converting categories to factors. 
+
+```{r}
+summary(cars)
+
+# Converting the categorical variables to factors for ease of use later
+cars <- cars %>%
+  mutate(across(all_of(c("fuel", "seller_type", "transmission", "owner")), as.factor))
+
+skimr::skim(cars)
+```
+
+## Question 1: Exploratory Data Analysis
+
+### Average Sale Price: Auto v Manual
+
+```{r }
+cars %>%
+  group_by(transmission) %>%
+  summarize(n = n(),
+            sale_price_avg = mean(selling_price),
+            sale_price_sd = sd(selling_price),
+            sale_price_cv = sale_price_sd / sale_price_avg)
+```
+
+Automatic cars represent `r round((448/3892) * 100, 0)`% of the dataset and have more variance in price than manual cars in this dataset.
+
+### Highest Sale Price: Automatic Cars
+
+```{r }
+cars %>%
+  filter(transmission == "Automatic", selling_price == max(selling_price))
+```
+
+The highest-priced car with automatic transmission in this dataset is the 2016 Audi RS7 Sportback Performance, selling at ₹8,900,000. 
+
+### Average Sale Price: Plotted
+
+```{r}
+cars %>%
+  group_by(transmission) %>%
+  summarize(sale_price_avg = mean(selling_price)) %>%
+  ggplot(aes(x = transmission, y = sale_price_avg)) +
+  geom_col() +
+  labs(title = "Average Sale Price",
+       subtitle = "by Transmission Type",
+       y = "Average Sale Price (Indian Rupees)",
+       x = "Transmission Type")
+```
+
+### Sale Price by Year by Transmission Type
+
+```{r}
+cars %>%
+  ggplot(aes(x = year, y = selling_price, color = transmission)) +
+  geom_point(alpha = .33) + 
+  labs(title = "Sale Price Over Time",
+       subtitle = "by Transmission Type",
+       x = "Year",
+       y = "Sale Price (Indian Rupees)",
+       color = "Transmission")
+```
+
+## Question 2: Modeling Sale Price with Two Independent Variables
+
+```{r}
+cars_lm1 <- cars %>%
+  lm(data = ., selling_price ~ km_driven + transmission)
+
+summary(cars_lm1)
+```
+
+Based on this model a car with automatic transmission and 0 kilometers on the odometer at the time of sale will sell for ₹1,488,539.4. If the car has a manual transmission that sale price falls by ₹978,272.7. Additionally, for every additional kilometer driven prior to the sale that price is estimated to fall by ₹1.6. All of these coefficients have a very low probability of resulting from random chance (p < .001), and so does the model overall.
+
+## Question 3: Adding a Third Variable
+
+```{r}
+cars_lm2 <- cars %>%
+  lm(data = ., selling_price ~ km_driven + transmission + year)
+
+summary(cars_lm2)
+```
+
+The coefficient for `km_driven` as an independent variable increased from -1.618 to .1543 after adding introducing `year` into the model. This shift is an example of omitted variable bias. Let's confirm that these two variables are correlated. 
+
+```{r}
+cor.test(cars$year, cars$km_driven)
+```
+
+`year` and `km_driven` are negatively correlated. In other words, as `year` increases in value `km_driven` decreases. This makes sense, since newer cars have had less time to be driven than older cars. Because `year` has a negative correlation with `km_driven` but a positive effect on the model, the coefficient for `km_driven` has a negative bias.
+
+## Question 4: Adding a Categorical Variable
+
+```{r}
+cars_lm3 <- cars %>%
+  lm(data = ., selling_price ~ km_driven + transmission + year + owner)
+
+summary(cars_lm3)
+```
+
+`owner`, a categorical variable with 5 distinct values, has been included in the model. The category of comparison - or the control - is the `r levels(cars$owner)[1]` category.
+
+Based on this model, the value of a car is predicted to be ₹195,487 higher if it has had no previous owner and has only been taken on test drives. After first ownership a car depreciates in value precipitously, with the price predicted to drop by ₹52,818 after a second owner, ₹57,754 after a third owner, and ₹24,043 for fourth ownership and beyond. These coefficients have significant p-values (p < .05) for all but two categories, "Fourth & Above Owner" and "Test Drive Car", indicating that these associations are not the result of random chance.
+
+## Question 5: Prediction Using `cars_lm3`
+
+The predicted value for a 2012 car with automatic transmission and no previous owners is: 
+
+$$\hat{Y} = -90454601.2990 + .2485(100000) + 45591.6758(2012) = ₹1,300,700$$
+
+## Question 6: Testing for Interaction Effects
+
+```{r}
+cars_lm4 <- cars %>%
+  lm(data = ., selling_price ~ km_driven + transmission + year + owner + (km_driven * year))
+
+summary(cars_lm4)
+```
+
+This model indicates that the effect of `year` decreases by ₹0.09 for every unit increase in `km_driven`, with a significant likelihood that this relationship in the data is not due to random chance (p < .05). In other words `km_driven` moderates the effect of `year` on `selling_price`, though it could be said that this effect is true in the other direction based on the evidence.
+
+# PART TWO
+
+Part two explores health cost and insurance information. Below is a summary of the data using `summary` and `skim`. 
+
+```{r}
+summary(insurance)
+
+insurance <- insurance %>%
+  mutate(
+    sex = as.factor(sex),
+    smoker = as.logical(ifelse(smoker == "yes", T, F)),
+    region = as.factor(region)
+  )
+
+skimr::skim(insurance)
+```
+
+## Question 7: The Written Model
+
+### Full Model Notation
+$$\hat{charges} = \beta_0 + \beta_1age + \beta_2BMI + \alpha_1male +  \alpha_2smoker + \epsilon $$
+
+### Base Group
+The base group in this model is female non-smokers.
+
+### Conditional Expectation for Two Groups
+
+#### Female Smoker
+$$\hat{charges} = \beta_0 + \beta_1age + \beta_2BMI + \alpha_1(0) + \alpha_2(1) + \epsilon$$
+
+#### Male Non-smoker
+$$\hat{charges} = \beta_0 + \beta_1age + \beta_2BMI + \alpha_1(1) + \alpha_2(0) + \epsilon$$
+
+## Question 8: Running the Model
+
+```{r}
+insurance_lm1 <- insurance %>%
+  lm(data = ., charges ~ age + bmi + sex + smoker)
+
+summary(insurance_lm1)
+```
+
+Based on this model a male is predicted to be charged \$109.04 less than a female by their health insurance, though the p-value indicates that this is not a strong relationship (p > .05). A smoker is predicted to be charged \$23,833.87 more than a non-smoker, with a very low probability of this association being due to random chance (p < .001). The standard error for the coefficient of `smoker` is 414.19, and 334.66 for the `sex` coefficient. `smoker` and `sex` also have different variance in their observed values at ~.16 and ~.25 respectively. This difference in reported standard errors could be due to multicolinearity between `sex` or `smoker` and the other variables in the model.
+
+## Question 9: Testing for Interaction Effects
+
+```{r}
+insurance_lm2 <- insurance %>%
+  lm(data = ., charges ~ age + bmi + sex + smoker + bmi * smoker)
+
+summary(insurance_lm2)
+```
+
+Based on this new model including interaction effects between `smoker` and `bmi` we can see a significant result in the coefficient of that interaction (p < .001). This indicates that the effect of `bmi` on `charges` is different between smokers and non-smokers. In terms of `bmi` the model describes an increase of almost \$8 in charges for each increase in unit of `bmi` when controlling for `smoker`. A smoker with 0 `bmi` is an predicted to be charged \$20,193.15 less than a non-smoker. If `smoker` is TRUE, then every increase in `bmi` is associated with an increase of \$1,435.60 in addition to the \$8/unit in charges. 
+
+A 38 year old non-smoker male with 25 BMI is estimated to be charged the following:
+```{r}
+paste0("$", -2071.077 + (266.372 * 38) + (7.969 * 25) - 473.495)
+```
+
+A 25 year-old smoker female with 30 BMI is estimated to be charged the following:
+```{r}
+paste0("$", -2071.077 + (266.372 * 25) + (7.969 * 30) - 20193.152 + (1435 * 30))
+```
+
+## Question 10: Examining the Coefficients
+
+The word causal in this question makes me pause. While I do think that these coefficients make sense - because a high-BMI smoker is likely to be charged more than a low-BMI non-smoker - I don't think it's reasonable to say that these findings are causal. Regression analysis explores associations but not causal effect. 
