@@ -1,0 +1,182 @@
+---
+title: "Homework 2"
+author: "Ethan Jantz"
+date: "4/10/2021"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+
+library(tidyverse)
+
+pbe <- read_csv(here::here("HW 3", "cavax.csv"))
+concarry <- read_csv(here::here("HW 3", "concealed_carry.csv"))
+```
+
+# PART ONE
+
+## QUESTION 1
+
+A. In how many schools is the percentage of students exempt for medical reasons (`med_exempt`) greater than the percentage exempt for religious reasons (`rel_exempt`)? Of this set of schools, what percent are public schools?
+
+```{r}
+pbe %>%
+  filter(med_exempt > rel_exempt) %>% # 518 Schools
+  filter(type == "PUBLIC") # 448 public schools
+
+print(round(448/518, 2)) # 86%
+```
+
+B. Which county, when averaging across all schools in that county, has the highest average percentage of exempt students (`exempt`)?
+
+```{r}
+pbe %>%
+  group_by(county) %>%
+  summarize(exempt_avg = mean(exempt)) %>%
+  arrange(desc(exempt_avg)) # Nevada county
+```
+
+C. Create a bar chart that shows for private and public schools (`type`) the percent of students exempt from providing vaccination records (`exempt`). 
+
+```{r}
+pbe %>%
+  group_by(type) %>%
+  summarize(pct_exempt = mean(exempt) / 100) %>%
+  ggplot(aes(x = pct_exempt, y = type)) +
+  geom_col() +
+  scale_x_continuous(labels = scales::percent) + 
+  geom_text(aes(label = scales::percent(pct_exempt)), hjust = 3)
+```
+
+## QUESTION 2
+
+Estimate a model predicting `exempt` by district `type` and `enrollment.` Treat `exempt` as a continuous variable. Interpret the intercept and coefficients. What is the predicted `exempt` percentage for a public school with 100 students in kindergarten? What is the predicted `exempt` percentage for a private school with 80 students in kindergarten?
+
+```{r}
+pbe_lm <- lm(exempt ~ type + enrollment, data = pbe)
+
+summary(pbe_lm)
+```
+
+## QUESTION 3
+
+Test whether the assumption of homoskedaticity has been met. Discuss results. Calculate the VIF for each variable. Should we be concerned with multicolinearity?
+
+```{r}
+car::ncvTest(pbe_lm)
+
+plot(pbe_lm, 3)
+```
+
+```{r}
+car::vif(pbe_lm)
+```
+
+## QUESTION 4
+
+Recenter the variable `enrollment` at its mean. Create an interaction effect between `type` and the new `enrollment` variable. Re-run the model predicting `exempt`. Assume that `type` moderates the effect of enrollment in your interpretation of the interaction. Interpret the results on each coefficient. Create a plot to visualize the interaction.
+
+```{r}
+pbe <- pbe %>%
+  mutate(enrollment_rct = as.vector(scale(enrollment, scale = FALSE))) # scale recenters based on mean and variance
+# scale = FALSE that I just want to subtract the mean
+# the as.vector call fixes an issue that came up with plotting
+# interaction effects
+
+pbe_lm2 <- lm(exempt ~ enrollment_rct + type + enrollment_rct:type, data = pbe)
+
+summary(pbe_lm2)
+```
+
+```{r}
+df <- ggeffects::ggpredict(pbe_lm2, terms = c("enrollment_rct", "type"))
+
+ggplot(df, aes(x, predicted, colour = group)) + 
+  geom_line()
+```
+
+
+## QUESTION 5
+
+Let's log transform (using the natural log) the variable `enrollment` and call the new variable `log_enroll`. Estimate a model predicting `exempt` by `type` and `log_enrollment`. Interpret the coefficient on the log of enrollment. Does it make more sense to use enrollment or the log of enrollment as the predictor variable? Why?
+
+```{r}
+pbe <- pbe %>%
+  mutate(log_enroll = log(enrollment))
+
+pbe_lm3 <- lm(exempt ~ log_enroll + type, data = pbe)
+
+summary(pbe_lm3)
+```
+
+## QUESTION 6
+
+Create a binary variable to indicate high versus low `exempt` rates. For schools with exempt percentages equal to or greater than 33 percent, indicate them as "high", for all other schools indicate them as "low". Run a logistic regression predicting whether a school is high versus low, in other words, we want our model to predict schools falling into the high category. In your model use the predictors of `type` and `enrollment` (note: do not use `log_enroll` in this model). Interpret the coefficients on `type` and `enrollment` in terms of both log odds and odds. What is the probability of being a high `exempt` school if the school is private and has 100 students enrolled. 
+
+```{r}
+pbe <- pbe %>%
+  mutate(exempt_cat = factor(ifelse(exempt >= 33, "high", "low")))
+
+pbe_lm4 <- glm(exempt_cat ~ type + enrollment, data = pbe, family = "binomial")
+
+summary(pbe_lm4)
+```
+
+# PART TWO
+
+## QUESTION 7
+
+A. Let's begin by exploring the data. How many years are there in the `concarry` data? How many observations per state?
+
+```{r}
+concarry %>%
+  count(year) # 23 years
+
+concarry %>%
+  count(statename) # 23 obs per state
+```
+
+B. How many states had conceal carry laws (`shall`) in 1977 and how many had concealed carry laws in 1999?
+
+```{r}
+concarry %>%
+  filter(year == 1977, shall == 1) %>%
+  count(statename) # 4 states
+
+concarry %>%
+  filter(year == 1999, shall == 1) %>%
+  count(statename) # 29 states
+```
+
+C. Create a plot tracking the violent crime rate (`vio`) over time for states that have ever adopted conceal carry laws (`shall`) and those that have never adopted the law. 
+
+```{r}
+concarry %>%
+  group_by(stateid) %>%
+  mutate(shall_never = factor(ifelse(sum(shall) > 0, 0, 1))) %>%
+  group_by(shall_never, year) %>%
+  summarize(vio = mean(vio)) %>%
+  ggplot(aes(y = vio, x = year, col = shall_never)) +
+  geom_line()
+```
+
+
+## QUESTION 8
+
+Convert the violent crime rate (`vio`) into a logged variable (using the natural log), call it `log_vio`. This will be our dependent variable. Run a pooled regression of the data (i.e. standard OLS model as if this was cross-sectional data) predicting the log of violent crimes (`log_vio`) as a function of the presence of concealed carry laws (`shall`) and a set of dummy variables for year. Interpret the effect of `shall`. In general terms, what do the `year` dummy variables tell us about crime trends? In our current specification of the model, is the effect of `shall` the same for all years? Why or why not?
+
+```{r}
+concarry <- concarry %>%
+  mutate(log_vio = log(vio),
+         year = factor(year))
+
+concarry_lm <- lm(log_vio ~ shall + year, data = concarry)
+
+summary(concarry_lm)
+```
+

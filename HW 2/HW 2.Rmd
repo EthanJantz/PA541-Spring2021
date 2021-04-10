@@ -14,8 +14,8 @@ options(scipen = 999)
 
 library(tidyverse)
 
-cars <- read_csv(here::here("car_data.csv"))
-insurance <- read_csv(here::here("insurance.csv"))
+cars <- read_csv(here::here("HW 2", "car_data.csv"))
+insurance <- read_csv(here::here("HW 2", "insurance.csv"))
 ```
 
 # PART ONE
